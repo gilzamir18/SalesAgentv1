@@ -1,0 +1,31 @@
+Agora, no log de saída, em vez do agente de vendas fechar a compra, ele volta para o loop de intenção. Tente corrigir isso. Veja o log: [Cycle:intention_loop] Iteration 1/5
+
+Você: Eu quero um cheeseburger
+[Cycle:intention_loop] Valid: True
+[Cycle:intention_loop] Output: pedido=[cheeseburger]...
+
+Vendedor: O cheeseburger está disponível por R$12,00. Gostaria de adicionar mais alguma coisa ao seu pedido?
+[Cycle:chat_loop] Valid: False | Feedback: Histórico:
+User: Eu quero um cheeseburger
+Vendedor: O cheeseburger está disponível por R$12,00. Gostaria de adicionar mais alguma coisa ao seu pedido?
+[Cycle:chat_loop] Output: O cheeseburger está disponível por R$12,00. Gostaria de adicionar mais alguma coisa ao seu pedido?...
+[Cycle:chat_loop] Iteration 2/100
+
+[Cycle:intention_loop] Starting (max 5 iterations)
+[Cycle:intention_loop] Iteration 1/5
+
+Você: Não, quero fechar a compra.
+[Cycle:intention_loop] Valid: True
+[Cycle:intention_loop] Output: pedido=[cheeseburger]...
+
+Vendedor: Olá! Temos cheeseburgers disponíveis por R$ 12,00 cada. Gostaria de pedir um?
+[Cycle:chat_loop] Valid: False | Feedback: Histórico:
+User: Eu quero um cheeseburger
+Vendedor: O cheeseburger está disponível por R$12,00. Gostaria de adicionar mais alguma coisa ao seu pedido?
+User: Não, quero fechar a compra.
+Vendedor: Olá! Temos cheeseburgers disponíveis por R$ 12,00 cada. Gostaria de pedir um?
+[Cycle:chat_loop] Output: Olá! Temos cheeseburgers disponíveis por R$ 12,00 cada. Gostaria de pedir um?...
+[Cycle:chat_loop] Iteration 3/100
+
+[Cycle:intention_loop] Starting (max 5 iterations)
+[Cycle:intention_loop] Iteration 1/5
