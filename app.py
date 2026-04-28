@@ -10,20 +10,27 @@ from agenticblocks.blocks.patterns.plan_executor import PlanExecutorBlock, PlanE
 from utils import (
     _consultar_item, _get_cardapio, validate_reply, chat_history,
     _adicionar_item, _remover_item, _ver_carrinho, _fechar_pedido,
-    print_agent_response
+    _registrar_endereco, _registrar_pagamento,
+    print_agent_response, estado_pedido
 )
 
 # ── Observabilidade ────────────────────────────────────────────────────────
 
 class ObservableLLMAgent(LLMAgentBlock):
+
     async def run(self, input: AgentInput) -> AgentOutput:
         #print("-" * 90)
         #print(f"[{self.name}] Prompt:\n{input.prompt}")
         #print("-" * 90)
-        return await super().run(input)
+        output = await super().run(input)
+        if self.name == "planner_agent" and False:
+            print("-*-"*20, end=" output ")
+            print("-*-"*20)
+            print(output)
+            print("-*-"*40)
+        return output
 
 # ── Loop ───────────────────────────────────────────────────────────────────
-
 
 # ── Bloco que roda um turno (plan + execute) ───────────────────────────────
 def make_turn_block(planner_agent: LLMAgentBlock, plan_executor: PlanExecutorBlock):
@@ -77,16 +84,19 @@ def get_user_input() -> dict:
     return {"user_message": user_input}
 
 
+_CONFIRMACOES = {"sim", "ok", "confirmo", "confirmado", "certo", "tá", "ta",
+                 "tá bom", "ta bom", "pode ser", "perfeito", "isso", "correto"}
+
 @as_tool(name="check_done")
 def check_done(last_message: str = "") -> dict:
-    # Decide pelo último input do usuário, lendo do histórico.
     last_user = ""
     for line in reversed(chat_history):
         if line.startswith("User:"):
-            last_user = line[len("User:"):].strip()
+            last_user = line[len("User:"):].strip().lower()
             break
-    if last_user and ("/bye" in last_user.lower() or
-                      last_user.lower() in {"sair", "tchau", "fim"}):
+    if estado_pedido["fechado"] and last_user and (
+        last_user in _CONFIRMACOES or any(c in last_user for c in _CONFIRMACOES)
+    ):
         return {"is_valid": True, "feedback": "encerrado"}
     return {"is_valid": False, "feedback": "continuar"}
 
@@ -104,20 +114,25 @@ async def main():
         model="ollama/mistral-nemo:latest",
         description="Redige a fala final ao cliente, usando exclusivamente os dados fornecidos.",
         system_prompt=(
-            "Você é a voz do TasteFast (lanchonete).\n"
-            "REGRAS ABSOLUTAS:\n"
-            "1. Você SÓ pode mencionar itens, preços e disponibilidade que "
-            "apareçam EXATAMENTE em 'DADOS REAIS A USAR'. NUNCA invente itens.\n"
-            "2. Copie nomes e preços literalmente. Não traduza, não adapte.\n"
-            "3. Se 'DADOS REAIS A USAR' está vazio, informe que não conseguiu "
-            "carregar a informação. NUNCA faça perguntas ao cliente nem peça confirmação.\n"
-            "4. Sempre entregue a resposta chamando a tool "
-            "'print_agent_response' UMA única vez.\n"
-            "5. Seja breve, amigável, em português brasileiro.\n"
-            "6. NUNCA invente informações sobre preparo, entrega ou tempo de espera. "
-            "Transmita ao cliente EXATAMENTE o que as observações indicam.\n"
-            "7. Se o briefing contiver 'RECUSAR', informe educadamente que você "
-            "só pode ajudar com cardápio, preços e pedidos do TasteFast."
+            "Você é a voz do TasteFast (lanchonete). Seu único trabalho é chamar "
+            "a tool 'print_agent_response' UMA vez com a mensagem final ao cliente.\n\n"
+            "REGRAS:\n"
+            "1. OBRIGATÓRIO: chame 'print_agent_response' UMA única vez. Nunca responda "
+            "sem chamar essa tool.\n"
+            "2. Baseie sua resposta nos 'DADOS REAIS A USAR' e no 'BRIEFING DO PLANNER'. "
+            "Se os dados mostrarem confirmação de pedido, endereço, pagamento ou carrinho, "
+            "comunique isso ao cliente de forma clara.\n"
+            "3. Para cardápio: mencione APENAS itens que apareçam em 'DADOS REAIS A USAR'. "
+            "Copie nomes e preços literalmente.\n"
+            "4. Se os dados mostrarem que falta endereço ou pagamento, peça ao cliente "
+            "a informação que falta.\n"
+            "5. Se os dados mostrarem 'Pedido confirmado', transmita essa confirmação "
+            "ao cliente com o resumo fornecido.\n"
+            "6. Se 'DADOS REAIS A USAR' estiver vazio e o BRIEFING não der orientação, "
+            "diga: 'Desculpe, ocorreu um erro. Por favor, repita sua solicitação.'\n"
+            "7. Seja breve e amigável em português brasileiro.\n"
+            "8. Se o briefing contiver 'RECUSAR', informe que você só pode ajudar "
+            "com cardápio, preços e pedidos do TasteFast."
         ),
         tools=[print_agent_response],
         max_tools_calls=1,
@@ -143,7 +158,9 @@ async def main():
             '  - "adicionar_item": args = {"item": "<nome>", "quantidade": <n>}. Adiciona ao carrinho.\n'
             '  - "remover_item": args = {"item": "<nome>", "quantidade": <n>}. Remove do carrinho.\n'
             '  - "ver_carrinho": args = {}. Exibe o conteúdo atual do carrinho.\n'
-            '  - "fechar_pedido": args = {}. Confirma e fecha o pedido.\n'
+            '  - "registrar_endereco": args = {"endereco": "<endereço completo>"}. Registra o endereço de entrega.\n'
+            '  - "registrar_pagamento": args = {"forma": "<forma de pagamento>"}. Registra a forma de pagamento (pix, cartão, dinheiro).\n'
+            '  - "fechar_pedido": args = {}. Finaliza o pedido (exige endereço e pagamento já registrados).\n'
             '  - "reply": args = {"message": "<briefing curto para o executor>"}. '
             "SEMPRE o último passo.\n\n"
             "REGRAS:\n"
@@ -153,7 +170,13 @@ async def main():
             "3. Se perguntou sobre um item específico, use 'consultar_item'.\n"
             "4. Se quiser adicionar/remover itens, use 'adicionar_item'/'remover_item'.\n"
             "5. Se quiser ver o carrinho, use 'ver_carrinho'.\n"
-            "6. Se quiser fechar/confirmar o pedido, use 'fechar_pedido'.\n"
+            "6. Se o usuário informar um endereço de entrega, use 'registrar_endereco'.\n"
+            "6b. Se o usuário disser 'dinheiro', 'pix', 'cartão', 'crédito' ou 'débito', "
+            "use 'registrar_pagamento' com essa forma. Depois, se endereço já foi informado no histórico, "
+            "adicione 'fechar_pedido' na sequência.\n"
+            "6c. Para fechar/confirmar o pedido, use 'fechar_pedido'. Se a resposta de 'fechar_pedido' "
+            "indicar que falta endereço ou pagamento, inclua no 'reply' um briefing pedindo a informação "
+            "que falta. NÃO chame 'fechar_pedido' novamente no mesmo plano.\n"
             "7. Se for APENAS saudação/despedida/agradecimento (sem pedido de informação), vá direto ao 'reply'.\n"
             "8. Nunca invente ações fora da lista acima.\n"
             "9. Saída: APENAS o JSON, sem ```, sem comentários, sem texto extra.\n"
@@ -170,7 +193,8 @@ async def main():
 
     plan_executor = PlanExecutorBlock(
         executor_agent=executor_agent, 
-        tools=[_get_cardapio, _consultar_item, _adicionar_item, _remover_item, _ver_carrinho, _fechar_pedido],
+        tools=[_get_cardapio, _consultar_item, _adicionar_item, _remover_item, _ver_carrinho,
+               _registrar_endereco, _registrar_pagamento, _fechar_pedido],
         validator_fn=validate_reply,
         max_reply_retries=2,
         reply_prompt_template=(

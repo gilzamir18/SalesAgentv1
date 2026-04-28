@@ -1,5 +1,6 @@
 from agenticblocks import as_tool
 from collections import namedtuple
+import time
 
 # ── Estado de conversa ─────────────────────────────────────────────────────
 
@@ -40,6 +41,12 @@ produtos: dict[int, Produto] = {
 
 # carrinho_ativo mapeia produto_id → quantidade pedida
 carrinho_ativo: dict[int, int] = {}
+
+# checkout_info guarda dados necessários antes de fechar o pedido
+checkout_info: dict[str, str] = {}   # chaves: "endereco", "pagamento"
+
+# estado_pedido rastreia se o pedido foi fechado e aguarda confirmação do usuário
+estado_pedido: dict[str, bool] = {"fechado": False}
 
 
 # ── Carrinho de Compras ────────────────────────────────────────────────────
@@ -108,17 +115,45 @@ def _ver_carrinho() -> str:
     return _listar_carrinho()
 
 
+@as_tool(name="registrar_endereco")
+def _registrar_endereco(endereco: str) -> str:
+    """Registra o endereço de entrega do pedido."""
+    checkout_info["endereco"] = endereco.strip()
+    return f"Endereço de entrega registrado: {checkout_info['endereco']}"
+
+
+@as_tool(name="registrar_pagamento")
+def _registrar_pagamento(forma: str) -> str:
+    """Registra a forma de pagamento (ex: pix, cartão, dinheiro)."""
+    checkout_info["pagamento"] = forma.strip()
+    return f"Forma de pagamento registrada: {checkout_info['pagamento']}"
+
+
 @as_tool(name="fechar_pedido")
 def _fechar_pedido() -> str:
-    """Fecha o pedido, desconta estoque e limpa o carrinho."""
+    """Fecha o pedido após confirmar endereço e pagamento."""
     if not carrinho_ativo:
         return "Carrinho vazio. Adicione itens antes de fechar o pedido."
-    resumo = _listar_carrinho()   # usa função pura, não o tool decorado
+    faltando = [f for f in ("endereco", "pagamento") if f not in checkout_info]
+    if faltando:
+        labels = {"endereco": "endereço de entrega", "pagamento": "forma de pagamento"}
+        pendentes = " e ".join(labels[f] for f in faltando)
+        return f"Pedido não finalizado. Ainda falta informar: {pendentes}."
+    numero_pedido = int(time.time() * 1000) % 1_000_000
+    resumo = _listar_carrinho()
     for pid, qtd in carrinho_ativo.items():
         p = produtos[pid]
         produtos[pid] = p._replace(quantidade_em_estoque=p.quantidade_em_estoque - qtd)
     carrinho_ativo.clear()
-    return f"Pedido confirmado!\n{resumo}\nObrigado pela preferência!"
+    endereco  = checkout_info.pop("endereco")
+    pagamento = checkout_info.pop("pagamento")
+    estado_pedido["fechado"] = True
+    return (
+        f"Pedido confirmado! Número do pedido: #{numero_pedido:06d}\n{resumo}\n"
+        f"Entrega em: {endereco}\n"
+        f"Pagamento: {pagamento}\n"
+        "Por favor, confirme seu pedido respondendo 'sim' ou 'ok'."
+    )
 
 
 # ── Consulta ao Cardápio ───────────────────────────────────────────────────
