@@ -45,13 +45,13 @@ Entrada do usuário
 ## Pré-requisitos
 
 - Python 3.11+
-- [agenticblocks](https://github.com/agenticblocks/agenticblocks)
+- [agenticblocks](https://github.com/gilzamir18/agenticblocks)
 - [LiteLLM](https://docs.litellm.ai/) (instalado como dependência do agenticblocks)
 
 Instale as dependências:
 
 ```bash
-pip install agenticblocks litellm
+pip install agenticblocks.io litellm
 ```
 
 ## Executando a aplicação
